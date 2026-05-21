@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAIS · Dispatch Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0c0d0f;
+    --bg2:       #131417;
+    --bg3:       #1a1c21;
+    --border:    rgba(255,255,255,0.07);
+    --border2:   rgba(255,255,255,0.13);
+    --text:      #e8e9eb;
+    --muted:     #6b6e78;
+    --muted2:    #9699a3;
+    --accent:    #3b82f6;
+    --accent2:   #60a5fa;
+    --green:     #22c55e;
+    --green-bg:  rgba(34,197,94,0.1);
+    --amber:     #f59e0b;
+    --amber-bg:  rgba(245,158,11,0.1);
+    --red:       #ef4444;
+    --red-bg:    rgba(239,68,68,0.1);
+    --purple:    #a78bfa;
+    --purple-bg: rgba(167,139,250,0.1);
+    --font:      'Syne', sans-serif;
+    --mono:      'IBM Plex Mono', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ── Login Screen ───────────────────── */
+  #login-screen {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .login-box {
+    width: 360px;
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: 16px;
+    padding: 40px;
+    text-align: center;
+  }
+  .login-logo {
+    width: 52px; height: 52px;
+    background: var(--accent);
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 800;
+    color: #fff;
+    margin: 0 auto 20px;
+  }
+  .login-box h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .login-box p  { color: var(--muted2); font-size: 13px; margin-bottom: 28px; }
+  .login-box input {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 11px 14px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    outline: none;
+    margin-bottom: 12px;
+    transition: border-color .2s;
+  }
+  .login-box input:focus { border-color: var(--accent); }
+  .login-btn {
+    width: 100%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 11px;
+    font-family: var(--font);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .login-btn:hover { opacity: .88; }
+  .login-err { color: var(--red); font-size: 12px; margin-top: 8px; min-height: 18px; }
+
+  /* ── App Shell ───────────────────────── */
+  #app { display: none; }
+
+  .topnav {
+    height: 56px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 28px;
+    gap: 16px;
+    background: var(--bg);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .nav-logo {
+    width: 32px; height: 32px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 14px; color: #fff;
+    flex-shrink: 0;
+  }
+  .nav-title { font-size: 16px; font-weight: 700; }
+  .nav-sep   { flex: 1; }
+  .dot-wrap  { display: flex; align-items: center; gap: 7px; }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 0 3px var(--green-bg);
+    animation: pulse 2s infinite;
+  }
+  .status-dot.offline { background: var(--red); box-shadow: 0 0 0 3px var(--red-bg); animation: none; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+  .status-text { font-size: 12px; color: var(--muted2); font-family: var(--mono); }
+  .uptime-text { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+
+  .main { max-width: 1100px; margin: 0 auto; padding: 28px 24px; }
+
+  /* ── Stats Row ───────────────────────── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .stat-card.s-blue::before   { background: var(--accent); }
+  .stat-card.s-green::before  { background: var(--green); }
+  .stat-card.s-amber::before  { background: var(--amber); }
+  .stat-card.s-red::before    { background: var(--red); }
+  .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 8px; }
+  .stat-value { font-size: 32px; font-weight: 800; line-height: 1; }
+  .stat-value.s-blue  { color: var(--accent2); }
+  .stat-value.s-green { color: var(--green); }
+  .stat-value.s-amber { color: var(--amber); }
+  .stat-value.s-red   { color: var(--red); }
+  .stat-sub { font-size: 11px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
+
+  /* ── Two-column layout ───────────────── */
+  .cols { display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start; }
+  @media(max-width: 860px){ .cols { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: repeat(2,1fr); } }
+
+  /* ── Section headers ─────────────────── */
+  .section-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .section-title {
+    font-size: 11px; text-transform: uppercase;
+    letter-spacing: .1em; color: var(--muted); font-weight: 600;
+  }
+  .section-count {
+    font-size: 11px; font-family: var(--mono);
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 20px; padding: 2px 9px; color: var(--muted2);
+  }
+
+  /* ── Buffer cards ────────────────────── */
+  .buffers-wrap { display: flex; flex-direction: column; gap: 10px; margin-bottom: 28px; }
+  .empty-state {
+    border: 1px dashed var(--border2);
+    border-radius: 12px;
+    padding: 32px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .empty-state span { display: block; font-size: 24px; margin-bottom: 8px; opacity: .4; }
+
+  .buf-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    transition: border-color .2s;
+  }
+  .buf-card:hover { border-color: var(--border2); }
+
+  .buf-top {
+    display: flex; align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .buf-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  .load-pill {
+    font-family: var(--mono); font-size: 13px; font-weight: 500;
+    background: rgba(59,130,246,.15);
+    color: var(--accent2);
+    border: 1px solid rgba(59,130,246,.25);
+    border-radius: 6px;
+    padding: 3px 10px;
+  }
+  .event-pill {
+    font-size: 11px; font-weight: 600;
+    border-radius: 20px; padding: 3px 10px;
+    text-transform: uppercase; letter-spacing: .05em;
+  }
+  .ep-pickup   { background: var(--green-bg);  color: var(--green); }
+  .ep-delivery { background: var(--amber-bg);  color: var(--amber); }
+  .ep-traffic  { background: var(--purple-bg); color: var(--purple); }
+
+  .file-pill {
+    font-size: 11px; color: var(--muted2);
+    background: var(--bg3);
+    border-radius: 20px; padding: 3px 9px;
+    font-family: var(--mono);
+  }
+
+  .buf-right { display: flex; align-items: center; gap: 8px; }
+  .timer-num {
+    font-family: var(--mono); font-size: 15px; font-weight: 500;
+    min-width: 38px; text-align: right;
+    transition: color .3s;
+  }
+  .timer-green  { color: var(--green); }
+  .timer-amber  { color: var(--amber); }
+  .timer-red    { color: var(--red); }
+
+  .btn-sm {
+    font-family: var(--font); font-size: 12px; font-weight: 600;
+    border-radius: 7px; padding: 5px 12px;
+    cursor: pointer; border: 1px solid;
+    transition: opacity .15s, transform .1s;
+  }
+  .btn-sm:active { transform: scale(.97); }
+  .btn-flush  { background: var(--accent);     color: #fff;        border-color: var(--accent); }
+  .btn-cancel { background: transparent;       color: var(--muted2); border-color: var(--border2); }
+  .btn-flush:hover  { opacity: .85; }
+  .btn-cancel:hover { background: var(--bg3); }
+
+  .progress-track {
+    height: 3px; background: var(--bg3);
+    border-radius: 2px; overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .progress-fill {
+    height: 100%; border-radius: 2px;
+    transition: width 1s linear, background-color .4s;
+  }
+
+  .buf-meta {
+    display: flex; gap: 16px; flex-wrap: wrap;
+  }
+  .meta-chip {
+    font-size: 11px; color: var(--muted);
+    display: flex; align-items: center; gap: 5px;
+    font-family: var(--mono);
+  }
+  .meta-chip svg { opacity: .5; flex-shrink: 0; }
+
+  /* ── Activity log ────────────────────── */
+  .log-panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .log-entry {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    transition: background .15s;
+  }
+  .log-entry:last-child { border-bottom: none; }
+  .log-entry:hover { background: var(--bg3); }
+
+  .log-icon {
+    width: 30px; height: 30px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .li-sent  { background: var(--green-bg);  color: var(--green); }
+  .li-error { background: var(--red-bg);    color: var(--red); }
+
+  .log-body { flex: 1; min-width: 0; }
+  .log-main { font-size: 13px; font-weight: 500; }
+  .log-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: var(--mono); }
+  .log-time { font-size: 11px; color: var(--muted); font-family: var(--mono); flex-shrink: 0; padding-top: 2px; }
+
+  .log-empty { padding: 28px; text-align: center; color: var(--muted); font-size: 13px; }
+
+  /* ── Right sidebar ───────────────────── */
+  .sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+  .info-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .info-card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 12px; }
+  .info-row {
+    display: flex; justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-key { color: var(--muted2); }
+  .info-val { font-family: var(--mono); color: var(--text); }
+
+  .cmd-list { display: flex; flex-direction: column; gap: 8px; }
+  .cmd-item { background: var(--bg3); border-radius: 8px; padding: 10px 12px; }
+  .cmd-code { font-family: var(--mono); font-size: 11px; color: var(--accent2); margin-bottom: 3px; }
+  .cmd-desc { font-size: 11px; color: var(--muted); }
+
+  .refresh-info {
+    text-align: center; font-size: 11px; color: var(--muted);
+    font-family: var(--mono); padding: 6px 0;
+  }
+
+  /* ── Toasts ──────────────────────────── */
+  #toast-wrap {
+    position: fixed; bottom: 24px; right: 24px;
+    display: flex; flex-direction: column; gap: 8px;
+    z-index: 200;
+  }
+  .toast {
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 13px;
+    display: flex; align-items: center; gap: 10px;
+    min-width: 260px;
+    animation: slideIn .2s ease;
+  }
+  .toast.t-ok  { border-left: 3px solid var(--green); }
+  .toast.t-err { border-left: 3px solid var(--red); }
+  @keyframes slideIn { from { transform: translateX(20px); opacity:0 } to { transform: translateX(0); opacity:1 } }
+</style>
+</head>
+<body>
+
+<!-- ── Login ────────────────────────────── -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">R</div>
+    <h1>RAIS Dashboard</h1>
+    <p>Logistics dispatch automation</p>
+    <input type="password" id="pw-input" placeholder="Dashboard password" autocomplete="current-password">
+    <button class="login-btn" onclick="doLogin()">Sign in</button>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
+
+<!-- ── App ───────────────────────────────── -->
+<div id="app">
+  <nav class="topnav">
+    <div class="nav-logo">R</div>
+    <span class="nav-title">RAIS</span>
+    <span style="font-size:12px;color:var(--muted);font-family:var(--mono)">dispatch dashboard</span>
+    <div class="nav-sep"></div>
+    <div class="dot-wrap">
+      <div class="status-dot" id="bot-dot"></div>
+      <span class="status-text" id="bot-status-text">connecting...</span>
+    </div>
+    <span class="uptime-text" id="uptime-label"></span>
+  </nav>
+
+  <div class="main">
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card s-blue">
+        <div class="stat-label">Emails sent today</div>
+        <div class="stat-value s-blue" id="st-sent">—</div>
+        <div class="stat-sub">via Gmail API</div>
+      </div>
+      <div class="stat-card s-green">
+        <div class="stat-label">Active buffers</div>
+        <div class="stat-value s-green" id="st-bufs">—</div>
+        <div class="stat-sub">waiting to send</div>
+      </div>
+      <div class="stat-card s-amber">
+        <div class="stat-label">Files processed</div>
+        <div class="stat-value s-amber" id="st-files">—</div>
+        <div class="stat-sub">attachments today</div>
+      </div>
+      <div class="stat-card s-red">
+        <div class="stat-label">Errors</div>
+        <div class="stat-value s-red" id="st-errors">—</div>
+        <div class="stat-sub">today</div>
+      </div>
+    </div>
+
+    <div class="cols">
+      <!-- Left column -->
+      <div>
+        <!-- Buffers -->
+        <div class="section-head">
+          <span class="section-title">Active buffers</span>
+          <span class="section-count" id="buf-count">0</span>
+        </div>
+        <div class="buffers-wrap" id="buffers-container">
+          <div class="empty-state" id="buf-empty">
+            <span>◎</span>
+            Bot is idle — no active buffers
+          </div>
+        </div>
+
+        <!-- Log -->
+        <div class="section-head">
+          <span class="section-title">Activity log</span>
+          <span class="section-count" id="log-count">0</span>
+        </div>
+        <div class="log-panel" id="log-container">
+          <div class="log-empty">No activity yet today</div>
+        </div>
+      </div>
+
+      <!-- Sidebar -->
+      <div class="sidebar">
+        <div class="info-card">
+          <h3>Bot info</h3>
+          <div class="info-row"><span class="info-key">Username</span><span class="info-val">@rais</span></div>
+          <div class="info-row"><span class="info-key">Buffer window</span><span class="info-val">30s</span></div>
+          <div class="info-row"><span class="info-key">Max window</span><span class="info-val">45s</span></div>
+          <div class="info-row"><span class="info-key">Uptime</span><span class="info-val" id="uptime-val">—</span></div>
+          <div class="info-row"><span class="info-key">Started</span><span class="info-val" id="started-val">—</span></div>
+        </div>
+
+        <div class="info-card">
+          <h3>Commands</h3>
+          <div class="cmd-list">
+            <div class="cmd-item">
+              <div class="cmd-code">@rais picked up 8997849</div>
+              <div class="cmd-desc">Open BOL/pickup buffer</div>
+            </div>
+            <div class="cmd-item">
+              <div class="cmd-code">@rais delivered 8997849</div>
+              <div class="cmd-desc">Open POD/delivery buffer</div>
+            </div>
+            <div class="cmd-item">
+              <div class="cmd-code">@rais traffic 8997849</div>
+              <div class="cmd-desc">Open traffic update buffer</div>
+            </div>
+            <div class="cmd-item">
+              <div class="cmd-code">@rais done 8997849</div>
+              <div class="cmd-desc">Flush buffer immediately</div>
+            </div>
+            <div class="cmd-item">
+              <div class="cmd-code">@rais undo 8997849</div>
+              <div class="cmd-desc">Cancel active buffer</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="refresh-info" id="refresh-info">Refreshing every 2s</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast-wrap"></div>
+
+<script>
+  let token = '';
+  let pollInterval = null;
+  let lastSeen = { sent: null, bufs: null };
+
+  // ── Login ─────────────────────────────
+  document.getElementById('pw-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+
+  async function doLogin() {
+    const pw = document.getElementById('pw-input').value.trim();
+    if (!pw) return;
+    token = pw;
+    try {
+      const r = await fetch('/api/status', { headers: { 'x-dashboard-token': token } });
+      if (r.status === 401) {
+        document.getElementById('login-err').textContent = 'Wrong password.';
+        token = '';
+        return;
+      }
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      startPolling();
+    } catch(e) {
+      document.getElementById('login-err').textContent = 'Cannot connect to server.';
+    }
+  }
+
+  // ── Polling ───────────────────────────
+  function startPolling() {
+    fetchAll();
+    pollInterval = setInterval(fetchAll, 2000);
+  }
+
+  async function fetchAll() {
+    try {
+      const [statusRes, logRes] = await Promise.all([
+        fetch('/api/status', { headers: { 'x-dashboard-token': token } }),
+        fetch('/api/log?limit=40', { headers: { 'x-dashboard-token': token } })
+      ]);
+      const status = await statusRes.json();
+      const logData = await logRes.json();
+      renderStatus(status);
+      renderLog(logData.log || []);
+      const ts = new Date().toLocaleTimeString();
+      document.getElementById('refresh-info').textContent = `Last updated ${ts}`;
+    } catch(e) {
+      document.getElementById('bot-dot').classList.add('offline');
+      document.getElementById('bot-status-text').textContent = 'offline';
+    }
+  }
+
+  // ── Render status ─────────────────────
+  function renderStatus(s) {
+    document.getElementById('st-sent').textContent   = s.sentToday;
+    document.getElementById('st-bufs').textContent   = s.activeBuffers.length;
+    document.getElementById('st-files').textContent  = s.filesToday;
+    document.getElementById('st-errors').textContent = s.errorsToday;
+    document.getElementById('buf-count').textContent = s.activeBuffers.length;
+
+    // Bot status
+    const dot  = document.getElementById('bot-dot');
+    const stxt = document.getElementById('bot-status-text');
+    dot.classList.remove('offline');
+    stxt.textContent = 'online';
+
+    // Uptime
+    const u = s.uptime;
+    const hh = Math.floor(u/3600), mm = Math.floor((u%3600)/60), ss = u%60;
+    const uptimeStr = `${hh}h ${mm}m ${ss}s`;
+    document.getElementById('uptime-val').textContent   = uptimeStr;
+    document.getElementById('uptime-label').textContent = uptimeStr;
+    if (s.startedAt) {
+      document.getElementById('started-val').textContent = new Date(s.startedAt).toLocaleTimeString();
+    }
+
+    renderBuffers(s.activeBuffers);
+  }
+
+  // ── Render buffers ────────────────────
+  function renderBuffers(buffers) {
+    const container = document.getElementById('buffers-container');
+    const empty     = document.getElementById('buf-empty');
+
+    if (buffers.length === 0) {
+      // Keep empty state, remove buffer cards
+      const cards = container.querySelectorAll('.buf-card');
+      cards.forEach(c => c.remove());
+      if (!document.getElementById('buf-empty')) {
+        container.innerHTML = '';
+        const e = document.createElement('div');
+        e.className = 'empty-state'; e.id = 'buf-empty';
+        e.innerHTML = '<span>◎</span>Bot is idle — no active buffers';
+        container.appendChild(e);
+      }
+      return;
+    }
+
+    // Remove empty state
+    const em = document.getElementById('buf-empty');
+    if (em) em.remove();
+
+    // Remove cards no longer in list
+    container.querySelectorAll('.buf-card').forEach(card => {
+      if (!buffers.find(b => b.key === card.dataset.key)) card.remove();
+    });
+
+    // Add/update cards
+    buffers.forEach(b => {
+      let card = container.querySelector(`[data-key="${CSS.escape(b.key)}"]`);
+      const pct = Math.round((b.secondsLeft / 30) * 100);
+      const barColor = pct > 55 ? '#22c55e' : pct > 20 ? '#f59e0b' : '#ef4444';
+      const timerClass = pct > 55 ? 'timer-green' : pct > 20 ? 'timer-amber' : 'timer-red';
+      const epClass = b.eventType === 'pickup' ? 'ep-pickup' : b.eventType === 'delivery' ? 'ep-delivery' : 'ep-traffic';
+      const evLabel = b.eventType === 'pickup' ? 'BOL · Pickup' : b.eventType === 'delivery' ? 'POD · Delivery' : 'Traffic update';
+      const encodedKey = encodeURIComponent(b.key);
+
+      if (!card) {
+        card = document.createElement('div');
+        card.className   = 'buf-card';
+        card.dataset.key = b.key;
+        container.appendChild(card);
+      }
+
+      card.innerHTML = `
+        <div class="buf-top">
+          <div class="buf-left">
+            <span class="load-pill">#${b.loadNumber}</span>
+            <span class="event-pill ${epClass}">${evLabel}</span>
+            <span class="file-pill">${b.fileCount} file${b.fileCount !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="buf-right">
+            <span class="timer-num ${timerClass}">${b.secondsLeft}s</span>
+            <button class="btn-sm btn-flush"  onclick="doFlush('${encodedKey}')">Send now</button>
+            <button class="btn-sm btn-cancel" onclick="doCancel('${encodedKey}')">Cancel</button>
+          </div>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" style="width:${pct}%;background:${barColor}"></div>
+        </div>
+        <div class="buf-meta">
+          <span class="meta-chip">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            ${b.groupName}
+          </span>
+          <span class="meta-chip">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            @${b.taggerName}
+          </span>
+        </div>`;
+    });
+  }
+
+  // ── Render log ────────────────────────
+  function renderLog(entries) {
+    const container = document.getElementById('log-container');
+    document.getElementById('log-count').textContent = entries.length;
+
+    if (entries.length === 0) {
+      container.innerHTML = '<div class="log-empty">No activity yet today</div>';
+      return;
+    }
+
+    const evLabels = { pickup: 'Pickup', delivery: 'Delivery', traffic: 'Traffic' };
+
+    container.innerHTML = entries.map(e => {
+      const isSent = e.outcome === 'sent';
+      const iconClass = isSent ? 'li-sent' : 'li-error';
+      const iconSvg = isSent
+        ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>`
+        : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+      const mainText = isSent
+        ? `Load #${e.loadNumber} · ${evLabels[e.eventType] || e.eventType} email sent`
+        : `Load #${e.loadNumber} · Failed — ${e.error || 'unknown error'}`;
+      const sub = `${e.groupName} · @${e.taggerName} · ${e.fileCount} file${e.fileCount !== 1 ? 's' : ''} · ${e.durationMs ? Math.round(e.durationMs / 100) / 10 + 's' : ''}`;
+      const timeStr = new Date(e.timestamp).toLocaleTimeString();
+
+      return `<div class="log-entry">
+        <div class="log-icon ${iconClass}">${iconSvg}</div>
+        <div class="log-body">
+          <div class="log-main">${mainText}</div>
+          <div class="log-sub">${sub}</div>
+        </div>
+        <div class="log-time">${timeStr}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Actions ───────────────────────────
+  async function doFlush(encodedKey) {
+    try {
+      const r = await fetch(`/api/flush/${encodedKey}`, {
+        method: 'POST',
+        headers: { 'x-dashboard-token': token }
+      });
+      if (r.ok) toast('Email sent successfully', 'ok');
+      else      toast('Failed to send', 'err');
+    } catch(e) { toast('Server error', 'err'); }
+    fetchAll();
+  }
+
+  async function doCancel(encodedKey) {
+    try {
+      const r = await fetch(`/api/cancel/${encodedKey}`, {
+        method: 'POST',
+        headers: { 'x-dashboard-token': token }
+      });
+      if (r.ok) toast('Buffer cancelled', 'ok');
+      else      toast('Failed to cancel', 'err');
+    } catch(e) { toast('Server error', 'err'); }
+    fetchAll();
+  }
+
+  // ── Toast ─────────────────────────────
+  function toast(msg, type) {
+    const wrap = document.getElementById('toast-wrap');
+    const t = document.createElement('div');
+    t.className = `toast t-${type}`;
+    const icon = type === 'ok'
+      ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`
+      : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`;
+    t.innerHTML = icon + msg;
+    wrap.appendChild(t);
+    setTimeout(() => t.remove(), 3500);
+  }
+</script>
+</body>
+</html>

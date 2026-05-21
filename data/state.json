@@ -1,0 +1,46 @@
+{
+  "buffers": {},
+  "activityLog": [
+    {
+      "id": 1779331901353,
+      "loadNumber": "8997849",
+      "eventType": "update",
+      "outcome": "sent",
+      "groupName": "Azizbek Hakimov UNIT 45455",
+      "taggerName": "rais_ralph",
+      "fileCount": 0,
+      "error": null,
+      "durationMs": 0,
+      "timestamp": "2026-05-21T02:51:41.353Z"
+    },
+    {
+      "id": 1779331364271,
+      "loadNumber": "8997849",
+      "eventType": "update",
+      "outcome": "sent",
+      "groupName": "Rais Ralph & Rais",
+      "taggerName": "rais_ralph",
+      "fileCount": 0,
+      "error": null,
+      "durationMs": 0,
+      "timestamp": "2026-05-21T02:42:44.271Z"
+    },
+    {
+      "id": 1779331240646,
+      "loadNumber": "8997849",
+      "eventType": "update",
+      "outcome": "sent",
+      "groupName": "Rais Ralph & Rais",
+      "taggerName": "rais_ralph",
+      "fileCount": 0,
+      "error": null,
+      "durationMs": 0,
+      "timestamp": "2026-05-21T02:40:40.646Z"
+    }
+  ],
+  "sentToday": 3,
+  "filesToday": 0,
+  "errorsToday": 0,
+  "lastNudge": {},
+  "startedAt": "2026-05-21T02:40:23.001Z"
+}
