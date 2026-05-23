@@ -96,38 +96,83 @@ async function downloadTelegramFile(fileId, index) {
 }
 
 async function findLoadThread(loadNumber) {
-  const res = await gmail.users.messages.list({
+  const loadLower = loadNumber.toLowerCase();
+
+  // Step 1: search by subject
+  let res = await gmail.users.messages.list({
     userId: 'me',
     q: `subject:"${loadNumber}"`,
-    maxResults: 10
+    maxResults: 20
   });
-  if (!res.data.messages || res.data.messages.length === 0) return null;
+  let messages = res.data.messages || [];
 
-  // Find message with most recipients — that is the main thread
-  let bestMsg = null;
-  let bestCount = -1;
-
-  for (const m of res.data.messages) {
-    const full = await gmail.users.messages.get({
-      userId: 'me', id: m.id,
-      format: 'metadata',
-      metadataHeaders: ['Subject', 'From', 'To', 'Cc', 'Message-ID']
+  // Step 2: if nothing found in subject, search full text (body + subject)
+  if (messages.length === 0) {
+    res = await gmail.users.messages.list({
+      userId: 'me',
+      q: `"${loadNumber}"`,
+      maxResults: 20
     });
-    const headers = full.data.payload.headers;
-    const to = headers.find(h => h.name === 'To')?.value  || '';
-    const cc = headers.find(h => h.name === 'Cc')?.value  || '';
-    const count = (to + cc).split('@').length - 1;
-    if (count > bestCount) {
-      bestCount = count;
-      bestMsg = full;
-    }
+    messages = res.data.messages || [];
   }
 
-  if (!bestMsg) return null;
+  if (messages.length === 0) return null;
+
+  // Fetch metadata for all candidates
+  const fetched = [];
+  for (const m of messages) {
+    try {
+      const full = await gmail.users.messages.get({
+        userId: 'me', id: m.id,
+        format: 'metadata',
+        metadataHeaders: ['Subject', 'From', 'To', 'Cc', 'Message-ID', 'In-Reply-To']
+      });
+      fetched.push(full.data);
+    } catch(e) { /* skip */ }
+  }
+  if (fetched.length === 0) return null;
+
+  // Validate: keep only messages whose subject actually contains the load number
+  const validated = fetched.filter(msg => {
+    const sub = msg.payload.headers.find(h => h.name === 'Subject')?.value || '';
+    return sub.toLowerCase().includes(loadLower);
+  });
+
+  // If subject validation found nothing, use all candidates (body-search results)
+  const candidates = validated.length > 0 ? validated : fetched;
+
+  // Group by threadId, score: subject-match count × 1000 + message count
+  const threadMap = {};
+  for (const msg of candidates) {
+    const tid = msg.threadId;
+    if (!threadMap[tid]) threadMap[tid] = [];
+    threadMap[tid].push(msg);
+  }
+
+  let bestThreadId = null;
+  let bestScore = -1;
+  for (const [tid, msgs] of Object.entries(threadMap)) {
+    const subjectMatches = msgs.filter(msg => {
+      const sub = msg.payload.headers.find(h => h.name === 'Subject')?.value || '';
+      return sub.toLowerCase().includes(loadLower);
+    }).length;
+    const score = subjectMatches * 1000 + msgs.length;
+    if (score > bestScore) { bestScore = score; bestThreadId = tid; }
+  }
+
+  const threadMsgs = threadMap[bestThreadId];
+
+  // Find the root message: no In-Reply-To = original thread starter
+  let rootMsg = threadMsgs.find(msg => !msg.payload.headers.find(h => h.name === 'In-Reply-To'));
+  if (!rootMsg) {
+    // All have In-Reply-To; fall back to oldest by internalDate
+    rootMsg = threadMsgs.sort((a, b) => Number(a.internalDate) - Number(b.internalDate))[0];
+  }
+
   return {
-    threadId:  bestMsg.data.threadId,
-    messageId: bestMsg.data.id,
-    headers:   bestMsg.data.payload.headers
+    threadId:  rootMsg.threadId,
+    messageId: rootMsg.id,
+    headers:   rootMsg.payload.headers
   };
 }
 
@@ -145,14 +190,33 @@ function buildEmailBody(command, loadNumber, fileCount, extraText) {
 }
 
 async function sendEmailReply(threadInfo, command, loadNumber, attachmentPaths, extraText) {
-  const toHeader  = threadInfo.headers.find(h => h.name === 'To');
-  const subHeader = threadInfo.headers.find(h => h.name === 'Subject');
-  const msgIdHdr  = threadInfo.headers.find(h => h.name === 'Message-ID');
-  const ccHeader  = threadInfo.headers.find(h => h.name === 'Cc');
+  const fromHeader = threadInfo.headers.find(h => h.name === 'From');
+  const toHeader   = threadInfo.headers.find(h => h.name === 'To');
+  const subHeader  = threadInfo.headers.find(h => h.name === 'Subject');
+  const msgIdHdr   = threadInfo.headers.find(h => h.name === 'Message-ID');
+  const ccHeader   = threadInfo.headers.find(h => h.name === 'Cc');
 
-  const to         = toHeader  ? toHeader.value  : process.env.DEFAULT_EMAIL_TO;
-  const cc         = ccHeader  ? ccHeader.value  : '';
-  const subject    = subHeader ? `Re: ${subHeader.value}` : `Re: Load #${loadNumber}`;
+  // Get our own address so we don't include ourselves in reply-all
+  const profile = await gmail.users.getProfile({ userId: 'me' });
+  const myEmail = profile.data.emailAddress.toLowerCase();
+
+  const parseAddresses = (str) =>
+    (str || '').split(',').map(s => s.trim()).filter(Boolean);
+
+  // Reply-All: To = original From + original To (minus us)
+  //            Cc = original Cc (minus us)
+  const originalFrom = parseAddresses(fromHeader?.value || '');
+  const originalTo   = parseAddresses(toHeader?.value   || process.env.DEFAULT_EMAIL_TO);
+  const originalCc   = parseAddresses(ccHeader?.value   || '');
+
+  const allTo = [...originalFrom, ...originalTo]
+    .filter(addr => !addr.toLowerCase().includes(myEmail));
+  const allCc = originalCc
+    .filter(addr => !addr.toLowerCase().includes(myEmail));
+
+  const to      = allTo.join(', ') || process.env.DEFAULT_EMAIL_TO;
+  const cc      = allCc.join(', ');
+  const subject = subHeader ? `Re: ${subHeader.value}` : `Re: Load #${loadNumber}`;
   const originalId = msgIdHdr  ? msgIdHdr.value  : threadInfo.messageId;
   const body       = buildEmailBody(command, loadNumber, attachmentPaths.length, extraText);
   const boundary   = `rais_${Date.now()}`;
