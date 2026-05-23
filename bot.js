@@ -37,11 +37,17 @@ function detectCommand(text) {
 }
 
 function extractLoadNumber(text) {
-  // Strip bot mention and command words, then match any load number format
-  const cleaned = text.replace(/@\w+/g, '').replace(/\b(onsite|at|pu|del|update|checking|bol|pod|traffic|delay|stuck|accident|picked|up|delivered|delivery|dropped|loaded)\b/gi, '').trim();
-  // Match alphanumeric with optional dashes: ABC-123, 4556544-09, KLLX123456, 8997849
-  const match = cleaned.match(/([A-Z0-9]{2,}[-]?[A-Z0-9]*[-]?[A-Z0-9]+)/i);
-  return match ? match[1].toUpperCase() : null;
+  const cleaned = text
+    .replace(/@\w+/g, '')
+    .replace(/#/g, ' ')
+    .replace(/\b(load|onsite|at|pu|del|update|checking|bol|pod|traffic|delay|stuck|accident|picked|up|delivered|delivery|dropped|loaded)\b/gi, '')
+    .trim();
+  // Prefer pure numeric IDs first (most common load number format)
+  const numMatch = cleaned.match(/\b(\d{5,})\b/);
+  if (numMatch) return numMatch[1];
+  // Fall back to alphanumeric: ABC-123, KLLX123456, etc.
+  const alphaMatch = cleaned.match(/\b([A-Z]{1,4}\d+[-]?\d*)\b/i);
+  return alphaMatch ? alphaMatch[1].toUpperCase() : null;
 }
 
 const chatMessageStore = {};
