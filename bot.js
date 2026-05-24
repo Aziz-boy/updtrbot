@@ -23,6 +23,17 @@ const oauth2Client = new google.auth.OAuth2(
 oauth2Client.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
 const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
+// Security whitelists — empty array means allow all (no restriction)
+const ALLOWED_CHAT_IDS = process.env.ALLOWED_CHAT_IDS
+  ? process.env.ALLOWED_CHAT_IDS.split(',').map(s => s.trim()).filter(Boolean)
+  : [];
+const ALLOWED_USERNAMES = process.env.ALLOWED_USERNAMES
+  ? process.env.ALLOWED_USERNAMES.split(',').map(s => s.trim().toLowerCase().replace(/^@/, '')).filter(Boolean)
+  : [];
+
+if (ALLOWED_CHAT_IDS.length)   console.log(`Allowed chat IDs: ${ALLOWED_CHAT_IDS.join(', ')}`);
+if (ALLOWED_USERNAMES.length)  console.log(`Allowed usernames: ${ALLOWED_USERNAMES.join(', ')}`);
+
 function detectCommand(text) {
   const t = text.toLowerCase();
   if (/onsite\s+at\s+pu/i.test(t))                             return 'onsite_pu';
@@ -293,6 +304,19 @@ bot.on('message', async (msg) => {
 
   const mentionRegex = new RegExp(`@${BOT_USERNAME}`, 'i');
   if (!mentionRegex.test(text)) return;
+
+  // ── CHATID COMMAND (unrestricted — for setup) ────────
+  if (/\bchatid\b/i.test(text)) {
+    await bot.sendMessage(chatId, `Chat ID: \`${chatId}\``, { parse_mode: 'Markdown' });
+    return;
+  }
+
+  // ── SECURITY CHECKS ──────────────────────────────────
+  if (ALLOWED_CHAT_IDS.length && !ALLOWED_CHAT_IDS.includes(String(chatId))) return;
+
+  const username = (msg.from?.username || '').toLowerCase();
+  if (ALLOWED_USERNAMES.length && !ALLOWED_USERNAMES.includes(username)) return;
+  // ─────────────────────────────────────────────────────
 
   const taggerName = msg.from?.username || msg.from?.first_name || 'dispatcher';
   const command    = detectCommand(text);
