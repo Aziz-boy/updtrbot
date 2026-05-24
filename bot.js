@@ -42,6 +42,9 @@ function detectCommand(text) {
   if (/checking\s+bol/i.test(t))                                return 'bol';
   if (/checking\s+pod/i.test(t))                                return 'pod';
   if (/\btraffic\b|\bdelay\b|\bstuck\b|\baccident\b/i.test(t)) return 'traffic';
+  if (/\blumper\b/i.test(t))                                    return 'lumper';
+  if (/\btonu\b/i.test(t))                                      return 'tonu';
+  if (/\blayover\b/i.test(t))                                   return 'layover';
   if (/picked\s+up|pick\s+up|p\/u|\bpu\b|loaded/i.test(t))     return 'bol';
   if (/delivered|delivery|dropped|\bdel\b|\bdrop\b/i.test(t))   return 'pod';
   return null;
@@ -51,7 +54,7 @@ function extractLoadNumber(text) {
   const cleaned = text
     .replace(/@\w+/g, '')
     .replace(/#/g, ' ')
-    .replace(/\b(load|onsite|at|pu|del|update|checking|bol|pod|traffic|delay|stuck|accident|picked|up|delivered|delivery|dropped|loaded)\b/gi, '')
+    .replace(/\b(load|onsite|at|pu|del|update|checking|bol|pod|traffic|delay|stuck|accident|picked|up|delivered|delivery|dropped|loaded|lumper|tonu|layover)\b/gi, '')
     .trim();
   // Prefer pure numeric IDs first (most common load number format)
   const numMatch = cleaned.match(/\b(\d{5,})\b/);
@@ -98,18 +101,33 @@ function collectFilesInRange(chatId, startMessageId, endMessageId) {
   return collected;
 }
 
-async function downloadTelegramFile(fileId, index) {
+async function downloadTelegramFile(fileId, index, command, loadNumber) {
   const fileInfo = await bot.getFile(fileId);
   const fileUrl  = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileInfo.file_path}`;
   const ext      = path.extname(fileInfo.file_path) || '.jpg';
   const tmpPath  = path.join('/tmp', `rais_${Date.now()}_${index}${ext}`);
-  return new Promise((resolve, reject) => {
+  await new Promise((resolve, reject) => {
     const file = fs.createWriteStream(tmpPath);
     https.get(fileUrl, res => {
       res.pipe(file);
-      file.on('finish', () => file.close(() => resolve(tmpPath)));
+      file.on('finish', () => file.close(resolve));
     }).on('error', reject);
   });
+  // Rename to meaningful filename: PREFIX_LOADNUMBER_DATE_N.ext
+  const date      = new Date().toISOString().slice(0, 10);
+  const prefix    = (command || 'FILE').toUpperCase();
+  const namedPath = path.join('/tmp', `${prefix}_${loadNumber}_${date}_${index + 1}${ext}`);
+  fs.renameSync(tmpPath, namedPath);
+  return namedPath;
+}
+
+function parseLumperTimes(text) {
+  const inMatch  = text.match(/\bin\s+(\d{1,2}:\d{2})\b/i);
+  const outMatch = text.match(/\bout\s+(\d{1,2}:\d{2})\b/i);
+  return {
+    checkIn:  inMatch  ? inMatch[1]  : null,
+    checkOut: outMatch ? outMatch[1] : null
+  };
 }
 
 async function findLoadThread(loadNumber) {
@@ -202,6 +220,16 @@ function buildEmailBody(command, loadNumber, fileCount, extraText) {
     case 'bol':        return `Hello,\n\nLoad #${loadNumber} has been picked up.\n\nBOL attached below (${fileCount} file${fileCount !== 1 ? 's' : ''}).\n\nPlease confirm GTG.${sign}`;
     case 'pod':        return `Hello,\n\nLoad #${loadNumber} has been delivered.\n\nPOD attached below (${fileCount} file${fileCount !== 1 ? 's' : ''}).\n\nPlease confirm receipt.${sign}`;
     case 'traffic':    return `Team,\n\nLoad #${loadNumber} is experiencing a traffic delay.\n\nPhotos/video attached (${fileCount} file${fileCount !== 1 ? 's' : ''}).\n\nWe will keep you updated.${sign}`;
+    case 'lumper': {
+      const [checkIn, checkOut] = (extraText || '').split('|');
+      return `Hello,\n\nPlease find the lumper receipt attached for Load #${loadNumber}.\n\nCheck-in time:  ${checkIn || 'N/A'}\nCheck-out time: ${checkOut || 'N/A'}\n\nKindly process the lumper reimbursement at your earliest convenience.${sign}`;
+    }
+    case 'tonu': {
+      const reasonLine = extraText ? `\n\nReason: ${extraText}` : '';
+      return `Hello,\n\nWe are formally requesting TONU (Truck Order Not Used) for Load #${loadNumber}.\n\nThis load was cancelled by the broker after our driver was dispatched and en route.${reasonLine}\n\nPlease confirm TONU rate and process accordingly.${sign}`;
+    }
+    case 'layover':
+      return `Hello,\n\nWe are requesting layover pay for Load #${loadNumber}.\n\nOur driver was detained beyond the allowed free time and is requesting layover compensation.\n\nPlease confirm layover rate and process accordingly.${sign}`;
     default:           return `Update for Load #${loadNumber}.\n\n${extraText || ''}${sign}`;
   }
 }
@@ -291,7 +319,7 @@ function logActivity(entry) {
   state.save();
 }
 
-const NEEDS_FILES = ['bol', 'pod', 'traffic'];
+const NEEDS_FILES = ['bol', 'pod', 'traffic', 'lumper'];
 
 bot.on('message', async (msg) => {
   const chatId    = msg.chat.id;
@@ -353,7 +381,16 @@ bot.on('message', async (msg) => {
         await bot.sendMessage(chatId, `No text to forward.`);
         return;
       }
+    } else if (command === 'tonu') {
+      // Everything after stripping bot mention, keyword, and load number = optional reason
+      extraText = text
+        .replace(new RegExp(`@${BOT_USERNAME}`, 'gi'), '')
+        .replace(/\btonu\b/gi, '')
+        .replace(new RegExp(`\\b${loadNumber}\\b`, 'g'), '')
+        .replace(/#/g, '')
+        .trim();
     }
+    // layover: no extraText needed
 
     try {
       const threadInfo = await findLoadThread(loadNumber);
@@ -420,13 +457,24 @@ bot.on('message', async (msg) => {
     }
   }
 
+  // Parse lumper times before downloading
+  let fileExtraText = '';
+  if (command === 'lumper') {
+    const times = parseLumperTimes(text);
+    if (!times.checkIn || !times.checkOut) {
+      await bot.sendMessage(chatId, `Need in/out times. Example: lumper ${loadNumber} in 08:30 out 11:45`);
+      return;
+    }
+    fileExtraText = `${times.checkIn}|${times.checkOut}`;
+  }
+
   const startedAt       = Date.now();
   const downloadedPaths = [];
 
   try {
     for (let i = 0; i < collectedFiles.length; i++) {
       try {
-        const tmpPath = await downloadTelegramFile(collectedFiles[i].fileId, i);
+        const tmpPath = await downloadTelegramFile(collectedFiles[i].fileId, i, command, loadNumber);
         downloadedPaths.push(tmpPath);
       } catch(e) {
         console.error(`File ${i} download error:`, e.message);
@@ -453,7 +501,7 @@ bot.on('message', async (msg) => {
       return;
     }
 
-    await sendEmailReply(threadInfo, command, loadNumber, downloadedPaths, '');
+    await sendEmailReply(threadInfo, command, loadNumber, downloadedPaths, fileExtraText);
 
     state.sentToday++;
     state.filesToday += downloadedPaths.length;
