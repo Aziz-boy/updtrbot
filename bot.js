@@ -317,7 +317,13 @@ bot.on('message', async (msg) => {
       if (msg.reply_to_message) {
         extraText = msg.reply_to_message.text || msg.reply_to_message.caption || '';
       } else {
-        extraText = text.replace(new RegExp(`@${BOT_USERNAME}`, 'gi'), '').replace(/\bupdate\b/gi, '').trim();
+        extraText = text
+          .replace(new RegExp(`@${BOT_USERNAME}`, 'gi'), '')
+          .replace(/\bupdate\b/gi, '')
+          .replace(/^load\s*#\s*\S*\s*$/gim, '')
+          .replace(/^=+\s*$/gm, '')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
       }
       if (!extraText) {
         await bot.sendMessage(chatId, `No text to forward.`);
