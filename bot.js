@@ -67,6 +67,9 @@ function extractLoadNumber(text) {
 const chatMessageStore = {};
 const STORE_TTL_MS = 2 * 60 * 60 * 1000;
 
+// Groups currently in bulk-update mode (no @mention required)
+const bulkUpdateChats = new Set();
+
 function extractFileIds(msg) {
   const ids = [];
   if (msg.photo)    ids.push({ fileId: msg.photo[msg.photo.length - 1].file_id, type: 'photo' });
@@ -329,6 +332,65 @@ bot.on('message', async (msg) => {
   console.log(`[${groupName}] ${msg.from?.username || msg.from?.first_name || 'unknown'}: ${text || '[media]'}`);
 
   storeMediaMessage(msg);
+
+  // ── SLASH COMMANDS /statusupdates and /stopupdate (no @mention needed) ───
+  const trimmed = text.trim();
+  if (/^\/statusupdates\b/i.test(trimmed) || /^\/stopupdate\b/i.test(trimmed)) {
+    if (ALLOWED_CHAT_IDS.length && !ALLOWED_CHAT_IDS.includes(String(chatId))) return;
+    const slashUser = (msg.from?.username || '').toLowerCase();
+    if (ALLOWED_USERNAMES.length && !ALLOWED_USERNAMES.includes(slashUser)) return;
+
+    if (/^\/statusupdates\b/i.test(trimmed)) {
+      bulkUpdateChats.add(String(chatId));
+      await bot.sendMessage(chatId, `✓ Bulk update mode ON.\nSend updates now. Type /stopupdate when done.`);
+    } else {
+      bulkUpdateChats.delete(String(chatId));
+      await bot.sendMessage(chatId, `✓ Bulk update mode OFF.`);
+    }
+    return;
+  }
+
+  // ── BULK UPDATE MODE (no @mention required) ──────────────────────────────
+  if (bulkUpdateChats.has(String(chatId))) {
+    const loadNumber = extractLoadNumber(text);
+    if (!loadNumber) return; // silently skip non-update messages (e.g. casual chat)
+
+    const extraText = text
+      .replace(/\bupdate\b/gi, '')
+      .replace(/^load\s*#\s*\S*\s*$/gim, '')
+      .replace(/^=+\s*$/gm, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    if (!extraText) return;
+
+    const bulkTagger = msg.from?.username || msg.from?.first_name || 'dispatcher';
+    try {
+      const threadInfo = await findLoadThread(loadNumber);
+      if (!threadInfo) {
+        await bot.sendMessage(chatId, `Load #${loadNumber} not found.`);
+        state.errorsToday++;
+        state.save();
+        return;
+      }
+      await sendEmailReply(threadInfo, 'update', loadNumber, [], extraText);
+      state.sentToday++;
+      state.save();
+      await bot.sendMessage(chatId, `✓`);
+      logActivity({
+        id: Date.now(), loadNumber, eventType: 'update', outcome: 'sent',
+        groupName, taggerName: bulkTagger, fileCount: 0, error: null,
+        durationMs: 0, timestamp: new Date().toISOString()
+      });
+    } catch(err) {
+      console.error('[BulkUpdate] Error:', err.message);
+      state.errorsToday++;
+      state.save();
+      await bot.sendMessage(chatId, `Failed: ${err.message}`);
+    }
+    return;
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   const mentionRegex = new RegExp(`@${BOT_USERNAME}`, 'i');
   if (!mentionRegex.test(text)) return;
